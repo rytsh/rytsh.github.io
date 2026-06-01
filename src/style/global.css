@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Inconsolata:wght@300;400&display=swap');
+/* stylelint-disable-next-line import-notation */
+@import 'tailwindcss';
+
+html,
+body {
+  background-color: #f3f4f6;
+  font-family: Inconsolata, monospace;
+  height: 100%;
+}
+
+::selection {
+  background-color: #ef4444;
+  color: #fff;
+}
+
+.social {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.social:hover {
+  fill: #ff5c00;
+}
+
+*,
+::before,
+::after {
+  border-color: currentcolor;
+}
+
+.hoverit:hover {
+  background-color: #fef9c3;
+  box-shadow: 3px 3px rgb(0 0 0);
+  transition: all 0.14s ease-out;
+}

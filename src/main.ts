@@ -1,7 +1,8 @@
 import App from "@/App.svelte";
-import "@/style/global.scss";
+import "@/style/global.css";
+import { mount } from "svelte";
 
-const app = new App({
+const app = mount(App, {
   target: document.body,
 });
 

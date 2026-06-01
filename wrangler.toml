@@ -1,0 +1,6 @@
+name = "rytsh-message"
+main = "worker/discord-message.ts"
+compatibility_date = "2026-06-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://rytsh.io,https://www.rytsh.io"

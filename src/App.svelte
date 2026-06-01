@@ -1,47 +1,21 @@
 <script lang="ts">
+  import HomeTerminal from "@/components/HomeTerminal.svelte";
   import Info from "@/components/Info.svelte";
-  import Projects from "@/components/Projects.svelte";
-  import Flag from "./components/Flag.svelte";
-
-  import "@/helper/get";
-
-  let innerWidth = window.innerWidth;
-
-  let trigger = false;
-
-  const eventWidth = (w: number) => {
-    if (w <= 640 && !trigger) {
-      trigger = true;
-    } else if (w > 640 && trigger) {
-      trigger = false;
-    }
-  };
-
-  $: eventWidth(innerWidth);
 </script>
 
-<svelte:window bind:innerWidth />
-
-<div class="h-full flex flex-col gap-2 px-[5%]">
-  <div class="flex flex-wrap py-2 border-b-2 border-black mb-2">
+<div class="min-h-dvh w-full max-w-full overflow-x-hidden flex flex-col gap-2 sm:px-[5%]">
+  <div class="mx-[5%] flex flex-wrap py-2 border-b-2 border-black mb-2 sm:mx-0">
     <Info />
   </div>
   <a
-    class="py-1 px-2 border border-black bg-yellow-50 block hoverit"
+    class="mx-[5%] py-1 px-2 border border-black bg-yellow-50 block hoverit sm:mx-0"
     href="https://wiki.rytsh.io"
   >
     Personal Wiki
   </a>
-  <div
-    class={`flex flex-1 flex-wrap ${
-      trigger ? "" : "gap-2 "
-    }flex-col sm:flex-row`}
-  >
-    <Flag title="Projects" class={`${trigger ? "grow-0 " : ""}flex-1`}>
-      <Projects />
-    </Flag>
-    <!-- <Flag title="Blog Posts" class="flex-1">
-      <Links />
-    </Flag> -->
+  <div class="flex min-h-0 w-full min-w-0 flex-1 flex-wrap gap-2 flex-col sm:flex-row">
+    <div class="min-h-0 min-w-0 flex-1">
+      <HomeTerminal />
+    </div>
   </div>
 </div>

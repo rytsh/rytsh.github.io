@@ -1,21 +1,17 @@
-import * as path from "path";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
-import preprocess from "svelte-preprocess";
-import { createHtmlPlugin } from "vite-plugin-html";
+import tailwindcss from "@tailwindcss/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
   base: "./",
   plugins: [
-    svelte({ preprocess: preprocess({ name: "scss" }) }),
-    createHtmlPlugin({
-      minify: process.env.NODE_ENV == "production",
-    }),
+    tailwindcss(),
+    svelte(),
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src"),
+      "@": "/src",
     },
   },
   build: {
