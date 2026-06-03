@@ -5,7 +5,14 @@ type Env = {
 
 type MessagePayload = {
   message?: unknown;
+  name?: unknown;
   page?: unknown;
+};
+
+type ParsedMessagePayload = {
+  message: string;
+  name?: string;
+  page?: string;
 };
 
 type RequestMetadata = {
@@ -16,12 +23,33 @@ type RequestMetadata = {
   os: string;
 };
 
+type DiscordEmbed = {
+  color: number;
+  description: string;
+  fields: Array<{
+    inline?: boolean;
+    name: string;
+    value: string;
+  }>;
+  timestamp: string;
+  title: string;
+};
+
+type DiscordPayload = {
+  allowed_mentions: {
+    parse: string[];
+  };
+  embeds: DiscordEmbed[];
+  username: string;
+};
+
 const defaultAllowedOrigins = [
   "https://rytsh.io",
   "https://www.rytsh.io",
   "https://rytsh.github.io",
 ];
 const maxMessageLength = 800;
+const maxNameLength = 80;
 
 const json = (body: unknown, init: ResponseInit = {}, origin?: string) => {
   const headers = new Headers(init.headers);
@@ -61,7 +89,15 @@ const createCorsHeaders = (origin: string) => ({
 });
 
 const normalizeMessage = (message: string) => {
-  return message.replace(/\s+/g, " ").trim();
+  return message
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\t ]+$/gm, "")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trim();
+};
+
+const normalizeName = (name: string | undefined) => {
+  return name?.replace(/\s+/g, " ").trim().slice(0, maxNameLength) || undefined;
 };
 
 const trimHeader = (value: string | null, maxLength = 220) => {
@@ -150,24 +186,83 @@ const getRequestMetadata = (request: Request, origin: string): RequestMetadata =
   };
 };
 
-const createDiscordContent = (message: string, page: string | undefined, metadata: RequestMetadata) => {
-  const escapedMessage = message.replace(/\n/g, "\n> ");
-  const lines = [
-    "**New message from rytsh.io terminal**",
-    `> ${escapedMessage}`,
-    "",
-    `Page: ${page || "unknown"}`,
-    `Time: ${new Date().toISOString()}`,
-    "",
-    "**Visitor**",
-    `Country: ${metadata.country}`,
-    `Device: ${metadata.device}`,
-    `Browser: ${metadata.browser}`,
-    `OS: ${metadata.os}`,
-    `Origin: ${metadata.origin}`,
-  ];
+const parseJsonPayload = async (request: Request) => {
+  let payload: MessagePayload;
 
-  return lines.join("\n");
+  try {
+    payload = await request.json();
+  } catch {
+    return { error: "Invalid JSON body" };
+  }
+
+  if (typeof payload.message !== "string") {
+    return { error: "Message is required" };
+  }
+
+  return {
+    payload: {
+      message: payload.message,
+      name: typeof payload.name === "string" ? payload.name.slice(0, maxNameLength) : undefined,
+      page: typeof payload.page === "string" ? payload.page.slice(0, 200) : undefined,
+    },
+  };
+};
+
+const formatDiscordMessage = (message: string) => {
+  return message
+    .split("\n")
+    .map((line) => `> ${line || "\u200b"}`)
+    .join("\n");
+};
+
+const createMetadataSpoiler = (metadata: RequestMetadata) => {
+  return `||Country: ${metadata.country}\nDevice: ${metadata.device}\nBrowser: ${metadata.browser}\nOS: ${metadata.os}\nOrigin: ${metadata.origin}||`;
+};
+
+const createDiscordEmbeds = (
+  message: string,
+  page: string | undefined,
+  metadata: RequestMetadata,
+  name: string | undefined,
+): DiscordEmbed[] => {
+  const fields: DiscordEmbed["fields"] = [];
+
+  if (name) {
+    fields.push({
+      inline: true,
+      name: "Sender",
+      value: name,
+    });
+  }
+
+  fields.push(
+    {
+      name: "Page",
+      value: page || "unknown",
+    },
+    {
+      name: "Metadata (click to reveal)",
+      value: createMetadataSpoiler(metadata),
+    },
+  );
+
+  const embed: DiscordEmbed = {
+    color: 0x79cd88,
+    description: formatDiscordMessage(message),
+    fields,
+    timestamp: new Date().toISOString(),
+    title: "New message from rytsh.io terminal",
+  };
+
+  return [embed];
+};
+
+const sendDiscordWebhook = (webhookUrl: string, payload: DiscordPayload) => {
+  return fetch(webhookUrl, {
+    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
 };
 
 export default {
@@ -198,19 +293,19 @@ export default {
       return json({ error: "Discord webhook is not configured" }, { status: 500 }, allowedOrigin);
     }
 
-    let payload: MessagePayload;
+    const parsedPayload = await parseJsonPayload(request);
 
-    try {
-      payload = await request.json();
-    } catch {
-      return json({ error: "Invalid JSON body" }, { status: 400 }, allowedOrigin);
+    if ("error" in parsedPayload) {
+      return json({ error: parsedPayload.error }, { status: 400 }, allowedOrigin);
     }
 
-    if (typeof payload.message !== "string") {
-      return json({ error: "Message is required" }, { status: 400 }, allowedOrigin);
-    }
-
+    const payload = parsedPayload.payload as ParsedMessagePayload;
     const message = normalizeMessage(payload.message);
+    const name = normalizeName(payload.name);
+
+    if (!name) {
+      return json({ error: "Name is required" }, { status: 400 }, allowedOrigin);
+    }
 
     if (message.length < 2) {
       return json({ error: "Message is too short" }, { status: 400 }, allowedOrigin);
@@ -220,17 +315,13 @@ export default {
       return json({ error: `Message must be ${maxMessageLength} characters or less` }, { status: 400 }, allowedOrigin);
     }
 
-    const page = typeof payload.page === "string" ? payload.page.slice(0, 200) : undefined;
     const metadata = getRequestMetadata(request, allowedOrigin);
-    const discordResponse = await fetch(env.DISCORD_WEBHOOK_URL, {
-      body: JSON.stringify({
-        allowed_mentions: { parse: [] },
-        content: createDiscordContent(message, page, metadata),
-        username: "rytsh.io terminal",
-      }),
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-    });
+    const discordPayload: DiscordPayload = {
+      allowed_mentions: { parse: [] },
+      embeds: createDiscordEmbeds(message, payload.page, metadata, name),
+      username: "rytsh.io terminal",
+    };
+    const discordResponse = await sendDiscordWebhook(env.DISCORD_WEBHOOK_URL, discordPayload);
 
     if (!discordResponse.ok) {
       return json({ error: "Discord rejected the message" }, { status: 502 }, allowedOrigin);

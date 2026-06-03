@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { getRandomProfileGreeting } from "@/helpers/greetings";
   import Icon from "./part/Icon.svelte";
+
+  const profileGreeting = getRandomProfileGreeting();
 </script>
 
 <div
   class="flex flex-wrap justify-between items-center mx-auto relative text-center w-full"
 >
-  <span class="">Hi there, I'm Eray</span>
+  <span>{profileGreeting}</span>
   <span class="flex flex-wrap gap-1 justify-start cursor-pointer">
     <a href="https://www.linkedin.com/in/rytsh/" target="_blank" class="social">
       <Icon icon="linkedin" height="32" width="32" class="float-left" />

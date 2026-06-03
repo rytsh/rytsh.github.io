@@ -7,12 +7,6 @@
   <div class="mx-[5%] flex flex-wrap py-2 border-b-2 border-black mb-2 sm:mx-0">
     <Info />
   </div>
-  <a
-    class="mx-[5%] py-1 px-2 border border-black bg-yellow-50 block hoverit sm:mx-0"
-    href="https://wiki.rytsh.io"
-  >
-    Personal Wiki
-  </a>
   <div class="flex min-h-0 w-full min-w-0 flex-1 flex-wrap gap-2 flex-col sm:flex-row">
     <div class="min-h-0 min-w-0 flex-1">
       <HomeTerminal />
