@@ -42,11 +42,20 @@
     status: string;
   };
 
+  type ComposerHitArea = {
+    endColumn?: number;
+    endRow: number;
+    field: ComposerField;
+    startColumn?: number;
+    startRow: number;
+  };
+
   let terminalElement: HTMLDivElement;
   let terminal: Terminal | undefined;
   let commandRunning = false;
   let currentInput = "";
   let commandHistory: string[] = [];
+  let composerHitAreas: ComposerHitArea[] = [];
   let historyDraft = "";
   let historyIndex = 0;
   let messageComposer: MessageComposer | undefined;
@@ -60,6 +69,7 @@
   const maxMessageLength = 800;
   const maxNameLength = 60;
   const maxCaptchaLength = 3;
+  const composerNameStorageKey = "rytsh.messageComposer.name";
   const terminalFontFamily =
     '"JetBrains Mono", "SFMono-Regular", "Cascadia Mono", "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", monospace';
   const composerFields: ComposerField[] = [
@@ -92,6 +102,34 @@
   };
   const decodeMessageInput = (input: string) => {
     return input.replace(/\\n/g, "\n").trim();
+  };
+
+  const normalizeComposerName = (name: string) => {
+    return name.replace(/\s+/g, " ").trim().slice(0, maxNameLength);
+  };
+
+  const readStoredComposerName = () => {
+    try {
+      return normalizeComposerName(
+        window.localStorage.getItem(composerNameStorageKey) || "",
+      );
+    } catch {
+      return "";
+    }
+  };
+
+  const saveStoredComposerName = (name: string) => {
+    const nextName = normalizeComposerName(name);
+
+    try {
+      if (nextName) {
+        window.localStorage.setItem(composerNameStorageKey, nextName);
+      } else {
+        window.localStorage.removeItem(composerNameStorageKey);
+      }
+    } catch {
+      // Ignore storage failures; the composer should still work normally.
+    }
   };
 
   const randomInt = (min: number, max: number) => {
@@ -577,16 +615,48 @@
 
     const width = Math.max(36, Math.min(terminal.cols || 72, 78));
     const captchaLabel = `${messageComposer.captcha.question} = ${messageComposer.captchaAnswer}`;
+    const messageLines = messageEditorLines(width);
+    const messageStartRow = 5;
+    const messageEndRow = messageStartRow + messageLines.length - 1;
+    const captchaRow = messageEndRow + 2;
+    const buttonRow = captchaRow + 1;
     const sendLabel = buttonText("send", "Send");
     const cancelLabel = buttonText("cancel", "Cancel");
+    const buttonStartColumn = 3;
+    const sendEndColumn = buttonStartColumn + visibleLength(sendLabel) - 1;
+    const cancelStartColumn = sendEndColumn + 3;
+    const cancelEndColumn = cancelStartColumn + visibleLength(cancelLabel) - 1;
     const namePreview = messageComposer.name;
+
+    composerHitAreas = [
+      { endRow: 4, field: "name", startRow: 4 },
+      { endRow: messageEndRow, field: "message", startRow: messageStartRow },
+      { endRow: captchaRow, field: "captcha", startRow: captchaRow },
+      {
+        endColumn: sendEndColumn,
+        endRow: buttonRow,
+        field: "send",
+        startColumn: buttonStartColumn,
+        startRow: buttonRow,
+      },
+      {
+        endColumn: cancelEndColumn,
+        endRow: buttonRow,
+        field: "cancel",
+        startColumn: cancelStartColumn,
+        startRow: buttonRow,
+      },
+    ];
 
     writeComposerFrame([
       topLine(width),
       boxLine(titleText("message composer"), width, ansi.accent),
-      boxLine(helpText("Tab/Up/Down move  Enter action  Ctrl+C cancel"), width),
+      boxLine(
+        helpText("Tap/click fields  Tab/Up/Down move  Enter action"),
+        width,
+      ),
       fieldLine("name", "Name", namePreview, "required sender name", width),
-      ...messageEditorLines(width),
+      ...messageLines,
       boxLine(
         helpText(
           `Message: ${getMessageStats()}. In editor: Enter newline, Esc done.`,
@@ -610,6 +680,7 @@
     }
 
     messageComposer = undefined;
+    composerHitAreas = [];
     terminal.write("\x1b[?25h\x1b[?1049l");
     writeLines(lines);
     writePrompt();
@@ -647,6 +718,95 @@
     });
   };
 
+  const getComposerHitArea = (row: number, column: number) => {
+    return composerHitAreas.find((area) => {
+      if (row < area.startRow || row > area.endRow) {
+        return false;
+      }
+
+      if (area.startColumn !== undefined && column < area.startColumn) {
+        return false;
+      }
+
+      if (area.endColumn !== undefined && column > area.endColumn) {
+        return false;
+      }
+
+      return true;
+    });
+  };
+
+  const selectComposerField = (field: ComposerField) => {
+    if (!messageComposer || messageComposer.sending) {
+      return;
+    }
+
+    if (field === "send") {
+      updateMessageComposer({ selectedField: "send", status: "" });
+      void submitMessageComposer();
+      return;
+    }
+
+    if (field === "cancel") {
+      updateMessageComposer({ selectedField: "cancel", status: "" });
+      closeMessageComposer(["Message composer cancelled."]);
+      return;
+    }
+
+    updateMessageComposer({
+      messageCursorIndex:
+        field === "message"
+          ? messageComposer.message.length
+          : messageComposer.messageCursorIndex,
+      messageEditing: field === "message",
+      selectedField: field,
+      status:
+        field === "message"
+          ? "Editing message. Enter adds new line, Esc exits editor."
+          : "",
+    });
+  };
+
+  const handleComposerPointerDown = (event: PointerEvent) => {
+    if (!terminal || !messageComposer) {
+      return;
+    }
+
+    const screen = terminalElement.querySelector<HTMLElement>(".xterm-screen");
+    const rect = (screen || terminalElement).getBoundingClientRect();
+
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    const column = Math.max(
+      1,
+      Math.min(
+        terminal.cols || 1,
+        Math.floor(((event.clientX - rect.left) / rect.width) * terminal.cols) +
+          1,
+      ),
+    );
+    const row = Math.max(
+      1,
+      Math.min(
+        terminal.rows || 1,
+        Math.floor(((event.clientY - rect.top) / rect.height) * terminal.rows) +
+          1,
+      ),
+    );
+    const area = getComposerHitArea(row, column);
+
+    if (!area) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    focusTerminal();
+    selectComposerField(area.field);
+  };
+
   const appendComposerInput = (value: string) => {
     if (!messageComposer) {
       return;
@@ -654,9 +814,15 @@
 
     if (messageComposer.selectedField === "name") {
       const nextValue = value.replace(/[\r\n\t]+/g, " ");
+      const nextName = `${messageComposer.name}${nextValue}`.slice(
+        0,
+        maxNameLength,
+      );
+
+      saveStoredComposerName(nextName);
 
       updateMessageComposer({
-        name: `${messageComposer.name}${nextValue}`.slice(0, maxNameLength),
+        name: nextName,
         status: "",
       });
       return;
@@ -707,8 +873,12 @@
     }
 
     if (messageComposer.selectedField === "name") {
+      const nextName = messageComposer.name.slice(0, -1);
+
+      saveStoredComposerName(nextName);
+
       updateMessageComposer({
-        name: messageComposer.name.slice(0, -1),
+        name: nextName,
         status: "",
       });
       return;
@@ -1042,8 +1212,8 @@
       message: rawMessage,
       messageCursorIndex: rawMessage.length,
       messageEditing: false,
-      name: "",
-      selectedField: rawMessage ? "name" : "message",
+      name: readStoredComposerName(),
+      selectedField: "name",
       sending: false,
       status: "Fill required fields, solve captcha, then Send.",
     };
@@ -1338,6 +1508,9 @@
     terminal.loadAddon(new WebLinksAddon(openLink));
     terminal.open(terminalElement);
     terminal.onData(handleInput);
+    terminalElement.addEventListener("pointerdown", handleComposerPointerDown, {
+      capture: true,
+    });
 
     const fitTerminal = () => {
       if (!terminal) {
@@ -1373,6 +1546,11 @@
     return () => {
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", scheduleFit);
+      terminalElement.removeEventListener(
+        "pointerdown",
+        handleComposerPointerDown,
+        { capture: true },
+      );
       resizeObserver.disconnect();
       terminal?.dispose();
       terminal = undefined;
